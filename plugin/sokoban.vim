@@ -53,6 +53,9 @@
 "              added extra guidance on the level complete message
 "          1.1a minor windows changes
 "          1.1b finally default to the <sfile> expansions
+"          1.1c funny how the first ten levels work and then 11 fails to
+"               complete properly. Fixed a bug in AreAllPackagesHome() which
+"               prevent the level from completing correctly.
 "
 " Acknowledgements:
 "    Dan Sharp - j/k key mappings were backwards.
@@ -145,14 +148,14 @@ function! <SID>ProcessLevel()
       while (c <= eoc) 
          let ch = currentLine[c]
          if (ch == '#')
-            let b:wallList = b:wallList . '(' . l . ',' . c . '), '
+            let b:wallList = b:wallList . '(' . l . ',' . c . '):'
          elseif (ch == '.')
-            let b:homeList = b:homeList . '(' . l . ',' . c . '), '
+            let b:homeList = b:homeList . '(' . l . ',' . c . '):'
          elseif (ch == '*')
-            let b:homeList = b:homeList . '(' . l . ',' . c . '), '
-            let b:packageList = b:packageList . '(' . l . ',' . c . '), '
+            let b:homeList = b:homeList . '(' . l . ',' . c . '):'
+            let b:packageList = b:packageList . '(' . l . ',' . c . '):'
          elseif (ch == '$')
-            let b:packageList = b:packageList . '(' . l . ',' . c . '), '
+            let b:packageList = b:packageList . '(' . l . ',' . c . '):'
          elseif (ch == '@')
             let b:manPosLine = l
             let b:manPosCol = c
@@ -366,7 +369,7 @@ function! <SID>AreAllPackagesHome()
    let endPos = -1
    while (allHome == 1) 
       let startPos = endPos + 1
-      let endPos = match(b:packageList, ",", startPos)
+      let endPos = match(b:packageList, ":", startPos)
       if (endPos != -1) 
          let pkg = strpart(b:packageList, startPos, endPos - startPos)
          let pkgIsHome = <SID>IsInList2(b:homeList, pkg)
@@ -413,12 +416,12 @@ function! <SID>MakeMove(lineDelta, colDelta, moveDirection)
             let b:manPosLine = newManPosLine
             let b:manPosCol = newManPosCol
             call <SID>UpdateHeader()
-         endif
-         " check to see if the level is complete. Only need to do this after
-         " each package push as each level must end with a package push
-         let levelIsComplete = <SID>AreAllPackagesHome()
-         if (levelIsComplete)
-            call <SID>DisplayLevelCompleteMessage() 
+            " check to see if the level is complete. Only need to do this after
+            " each package push as each level must end with a package push
+            let levelIsComplete = <SID>AreAllPackagesHome()
+            if (levelIsComplete)
+               call <SID>DisplayLevelCompleteMessage() 
+            endif
          endif
       else
          " the move is possible and no packages moved
