@@ -31,9 +31,18 @@
 " u - undo move
 "
 " Simply add sokoban.vim to your favorite vim plugin directory or source it
-" directly. Make sure you set the g:SokobanLevelDirectory variable to specify
-" the directory where the level files are stored. Default location is
-" $HOME/VimSokoban. Only tested on Linux....may need tweaking for Windows.
+" directly. The levels direcory is found as follows,
+" 1) if g:SokobanLevelDirectory is set that directory is used
+" 2) if $VIMSOKOBANDIR is set that directory is used
+" 3) if $HOME/VimSokoban exists it is used
+" 4) on WINDOWS, if c:\\VimSokoban exists it is used
+" 5) if a VimSokoban directory exists below the directory where the script
+"    lives exists is used. (this means that if sokoban.vim is in your plugin 
+"    directory you can put the levels into a directory called VimSokoban in 
+"    your plugin directory)
+" 6) Finally, the directory where the script lives is considered. (this means
+"    that if you have the levels and the sokoban.vim script in the same
+"    directory it should be able to find the levels)
 "
 " Levels came from the xsokoban distribution which is in the public domain.
 " http://xsokoban.lcs.mit.edu/xsokoban.html
@@ -42,9 +51,12 @@
 "          1.1 j/k mapping bug fixed
 "              added SokobanH, and SokobanV commands to control splitting
 "              added extra guidance on the level complete message
+"          1.1a minor windows changes
+"          1.1b finally default to the <sfile> expansions
 "
 " Acknowledgements:
 "    Dan Sharp - j/k key mappings were backwards.
+"    Bindu Wavell/Gergely Kontra - <sfile> expansion
 
 
 " Do nothing if the script has already been loaded
@@ -54,7 +66,6 @@ endif
 let loaded_VimSokoban = 1
 
 " Allow the user to specify the location of the sokoban levels
-" TODO - use <sfile> as suggested by Bindu Wavell and Gergely Kontra
 if (!exists("g:SokobanLevelDirectory"))
    if (exists("$VIMSOKOBANDIR"))
       let g:SokobanLevelDirectory = $VIMSOKOBANDIR
@@ -62,6 +73,16 @@ if (!exists("g:SokobanLevelDirectory"))
       let g:SokobanLevelDirectory = $HOME . "/VimSokoban/"
    elseif (has("win32") || has("win95") || has("dos32") || has("gui_win32"))
       let g:SokobanLevelDirectory = "c:\\VimSokoban\\"
+   else 
+      let g:SokobanLevelDirectory = ""
+   endif
+
+   if (!isdirectory(g:SokobanLevelDirectory)) 
+      " finally default to the location where the script was sourced from
+      let g:SokobanLevelDirectory = expand("<sfile>:p:h") . "/VimSokoban/"
+      if (!isdirectory(g:SokobanLevelDirectory))
+         let g:SokobanLevelDirectory = expand("<sfile>:p:h") . "/"
+      endif
    endif
 endif
 
