@@ -15,6 +15,12 @@
 " direction, pushing an object if it is in the way and there
 " is a clear space on the other side.
 "
+" Commands:
+"    Sokoban - or - Sokoban <level>  -- Start sokoban in the current window
+"    SokobanH - or - SokobanH <level>  -- horiz split and start sokoban
+"    SokobanV - or - SokobanV <level>  -- vertical split and start sokoban
+"
+" Maps:
 " h or <Left> - move the man left
 " j or <Down> - move the man down
 " k or <Up> - move the man up
@@ -31,6 +37,14 @@
 "
 " Levels came from the xsokoban distribution which is in the public domain.
 " http://xsokoban.lcs.mit.edu/xsokoban.html
+"
+" Version: 1.0 initial release
+"          1.1 j/k mapping bug fixed
+"              added SokobanH, and SokobanV commands to control splitting
+"              added extra guidance on the level complete message
+"
+" Acknowledgements:
+"    Dan Sharp - j/k key mappings were backwards.
 
 
 " Do nothing if the script has already been loaded
@@ -163,7 +177,6 @@ endfunction
 "            char - the character to set at the position
 " Returns  : nothing
 " Author   : Michael Sharpe (feline@irendi.com)
-" Notes    : can optimize more with string indexing
 function! <SID>SetCharInLine(theLine, theCol, char)
    let ln = getline(a:theLine)
    let leftStr = strpart(ln, 0, a:theCol)
@@ -310,8 +323,9 @@ function! <SID>DisplayLevelCompleteMessage()
    call setline(15, "   *************************************************** ")
    call setline(16, "                      LEVEL COMPLETE                   ")
    call setline(17, "            " . b:moves . " moves		     " . b:pushes . " pushes               ")
-   call setline(18, "   *************************************************** ")
-   call setline(19, "                                                     ")
+   call setline(18, "    (r)estart level, (p)revious level or (n)ext level  ")
+   call setline(19, "   *************************************************** ")
+   call setline(20, "                                                     ")
 endfunction
 
 " Function : AreAllPackagesHome (PRIVATE)
@@ -506,31 +520,32 @@ endfunction
 function! <SID>SetupMaps()
    map <buffer> h :call <SID>MoveLeft()<CR>
    map <buffer> <Left> :call <SID>MoveLeft()<CR>
-   map <buffer> j :call <SID>MoveUp()<CR>
-   map <buffer> <Up> :call <SID>MoveUp()<CR>
-   map <buffer> k :call <SID>MoveDown()<CR>
+   map <buffer> j :call <SID>MoveDown()<CR>
    map <buffer> <Down> :call <SID>MoveDown()<CR>
+   map <buffer> k :call <SID>MoveUp()<CR>
+   map <buffer> <Up> :call <SID>MoveUp()<CR>
    map <buffer> l :call <SID>MoveRight()<CR>
    map <buffer> <Right> :call <SID>MoveRight()<CR>
    map <buffer> u :call <SID>UndoMove()<CR>
-   map <buffer> r :call Sokoban(b:level)<CR>
-   map <buffer> n :call Sokoban(b:level + 1)<CR>
-   map <buffer> p :call Sokoban(b:level - 1)<CR>
+   map <buffer> r :call Sokoban("", b:level)<CR>
+   map <buffer> n :call Sokoban("", b:level + 1)<CR>
+   map <buffer> p :call Sokoban("", b:level - 1)<CR>
 endfunction
 
 " Function : Sokoban (PUBLIC)
 " Purpose  : This is the entry point to the game. It create the buffer, loads
 "            the level, and sets the game up.
-" Args     : none
+" Args     : splitWindow - indicates how to split the window
+"            level (optional) - specifies the start level
 " Returns  : nothing
 " Author   : Michael Sharpe (feline@irendi.com)
-function! Sokoban(...)
+function! Sokoban(splitWindow, ...)
    if (a:0 == 0)
       let level = 1
    else
       let level = a:1
    endif
-   call <SID>FindOrCreateBuffer('__\.\#\$VimSokoban\$\#\.__', "h")
+   call <SID>FindOrCreateBuffer('__\.\#\$VimSokoban\$\#\.__', a:splitWindow)
    call <SID>ClearBuffer()
    call <SID>DisplayInitialHeader(level)
    call <SID>LoadLevel(level)
@@ -540,7 +555,9 @@ function! Sokoban(...)
    normal 0
 endfunction
 
-command! -nargs=? Sokoban call Sokoban(<f-args>)
+command! -nargs=? Sokoban call Sokoban("", <f-args>)
+command! -nargs=? SokobanH call Sokoban("h", <f-args>)
+command! -nargs=? SokobanV call Sokoban("v", <f-args>)
 
 
 " Function : FindOrCreateBuffer (PRIVATE)
