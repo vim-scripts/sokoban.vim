@@ -1,0 +1,25 @@
+This is a mirror of http://www.vim.org/scripts/script.php?script_id=211
+
+The goal of VimSokoban is to push all the packages ($) into the  home area (.) of each level using hjkl keys or the arrow keys. 
+The arrow keys move the player (X) in the  corresponding direction, pushing a package if it is in the way and there is a clear 
+space on the other side.
+
+Use the 
+:Sokoban       - or -    :Sokoban <level num>     (no split window)
+:SokobanH     - or -    :SokobanH <level num>   (horizontal split window)
+:SokobanV     - or -    :SokobanV <level num>   (vertical split window)
+commands to start the game
+
+h or <Left> - move the man left
+j or <Down> - move the man down
+k or <Up> - move the man up
+l or <Right> - move the man right
+r - restart level
+n - next level
+p - previous level
+u - undo move
+
+Levels came from the xsokoban distribution which is in the public domain.
+ http://www.cs.cornell.edu/andru/xsokoban.html
+
+Take a look at VIM Tetris (vimscript#172) too....the game which started the VIM Game revolution :) 
