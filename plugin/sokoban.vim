@@ -54,8 +54,15 @@ endif
 let loaded_VimSokoban = 1
 
 " Allow the user to specify the location of the sokoban levels
+" TODO - use <sfile> as suggested by Bindu Wavell and Gergely Kontra
 if (!exists("g:SokobanLevelDirectory"))
-   let g:SokobanLevelDirectory = $HOME . "/VimSokoban/"
+   if (exists("$VIMSOKOBANDIR"))
+      let g:SokobanLevelDirectory = $VIMSOKOBANDIR
+   elseif (exists("$HOME"))
+      let g:SokobanLevelDirectory = $HOME . "/VimSokoban/"
+   elseif (has("win32") || has("win95") || has("dos32") || has("gui_win32"))
+      let g:SokobanLevelDirectory = "c:\\VimSokoban\\"
+   endif
 endif
 
 " Function : ClearBuff (PRIVATE)
