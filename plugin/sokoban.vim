@@ -53,14 +53,18 @@
 "              added extra guidance on the level complete message
 "          1.1a minor windows changes
 "          1.1b finally default to the <sfile> expansions
-"          1.1c funny how the first ten levels work and then 11 fails to
+"          1.2 funny how the first ten levels work and then 11 fails to
 "               complete properly. Fixed a bug in AreAllPackagesHome() which
 "               prevent the level from completing correctly.
+"          1.3  set buftype to nofle
+"               set nomodifiable
+"               remember current level
+"               best scores for each level
 "
 " Acknowledgements:
 "    Dan Sharp - j/k key mappings were backwards.
 "    Bindu Wavell/Gergely Kontra - <sfile> expansion
-
+"    Gergely Kontra - set buftype suggestion, set nomodifiable
 
 " Do nothing if the script has already been loaded
 if (exists("loaded_VimSokoban"))
@@ -89,7 +93,14 @@ if (!exists("g:SokobanLevelDirectory"))
    endif
 endif
 
-" Function : ClearBuff (PRIVATE)
+" The score file is in the home directory or the level directory
+if (exists("$HOME"))
+   let g:SokobanScoreFile = $HOME . "/.VimSokobanScores"
+else
+   let g:SokobanScoreFile = g:SokobanLevelDirectory . ".VimSokobanScores"
+endif
+
+" Function : ClearBuffer (PRIVATE)
 " Purpose  : clears the buffer of all characters
 " Args     : none
 " Returns  : nothing
@@ -177,6 +188,7 @@ function! <SID>LoadLevel(level)
    let levelFile = g:SokobanLevelDirectory . "level" . a:level . ".sok"
    let levelExists = filereadable(levelFile)
    if (levelExists)
+      set modifiable
       execute "r " . levelFile
       silent! execute "11,$ s/^/           /g"
       call <SID>ProcessLevel()
@@ -194,6 +206,11 @@ function! <SID>LoadLevel(level)
          highlight link SokobanWall Number
          highlight link SokobanHome Keyword 
       endif
+      call <SID>DetermineHighScores(a:level)
+      call <SID>DisplayHighScores()
+      call <SID>SaveCurrentLevelToFile(a:level)
+      set buftype=nofile
+      set nomodifiable
    else
       let b:level = 0
       call append(11, "Could not find file " . levelFile)
@@ -407,6 +424,7 @@ function! <SID>MakeMove(lineDelta, colDelta, moveDirection)
          let newPkgPosCol = newManPosCol + a:colDelta
          let newPkgPosIsEmpty = <SID>IsEmpty(newPkgPosLine, newPkgPosCol)
          if (newPkgPosIsEmpty)
+            set modifiable
             " the move is possible and we pushed a package
             call <SID>MoveMan(b:manPosLine, b:manPosCol, newManPosLine, newManPosCol, newPkgPosLine, newPkgPosCol)
             call <SID>UpdatePackageList(newManPosLine, newManPosCol, newPkgPosLine, newPkgPosCol)
@@ -421,9 +439,13 @@ function! <SID>MakeMove(lineDelta, colDelta, moveDirection)
             let levelIsComplete = <SID>AreAllPackagesHome()
             if (levelIsComplete)
                call <SID>DisplayLevelCompleteMessage() 
+               call <SID>UpdateHighScores()
+               call <SID>SaveCurrentLevelToFile(b:level + 1)
             endif
+            set nomodifiable
          endif
       else
+         set modifiable
          " the move is possible and no packages moved
          call <SID>MoveMan(b:manPosLine, b:manPosCol, newManPosLine, newManPosCol, -1, -1)
          let b:undoList = a:moveDirection . "," . b:undoList
@@ -431,6 +453,7 @@ function! <SID>MakeMove(lineDelta, colDelta, moveDirection)
          let b:manPosLine = newManPosLine
          let b:manPosCol = newManPosCol
          call <SID>UpdateHeader()
+         set nomodifiable
       endif
    endif
 endfunction
@@ -530,12 +553,14 @@ function! <SID>UndoMove()
                let currPkgOrManPosLine = b:manPosLine
                let currPkgOrManPosCol = b:manPosCol
             endif
+            set modifiable
             " this is abusing this function a little :)
             call <SID>MoveMan(currPkgOrManPosLine, currPkgOrManPosCol, newManPosLine, newManPosCol, oldPkgPosLine, oldPkgPosCol)
             let b:manPosLine = newManPosLine
             let b:manPosCol = newManPosCol
             let b:moves = b:moves - 1
             call <SID>UpdateHeader()
+            set nomodifiable
          endif
          " remove the move from the undo list
          let b:undoList = strpart(b:undoList, endMove + 1, strlen(b:undoList))
@@ -563,6 +588,227 @@ function! <SID>SetupMaps()
    map <buffer> p :call Sokoban("", b:level - 1)<CR>
 endfunction
 
+" Function : LoadScoresFile (PRIVATE)
+" Purpose  : loads the highscores file if it exists. Determines the last
+"            level played. The contents of the highscore file end up in the
+"            b:scoreFileContents variable.
+" Args     : none
+" Returns  : the last level played.
+" Author   : Michael Sharpe (feline@irendi.com)
+function! <SID>LoadScoresFile()
+   let currentLevel = 0
+   let scoreFileExists = filereadable(g:SokobanScoreFile)
+   if (scoreFileExists)
+      execute ":r " . g:SokobanScoreFile
+      normal 1G
+      normal dG
+      let b:scoreFileContents = @"      
+      let startPos = matchend(b:scoreFileContents, "CurrentLevel = ")
+      if (startPos != -1)
+         let endPos = match(b:scoreFileContents, ";", startPos)
+         if (endPos != -1)
+            let len = endPos - startPos
+            let currentLevel = strpart(b:scoreFileContents, startPos, len) 
+         endif
+      endif
+   else
+      let b:scoreFileContents = ""      
+   endif
+   let b:scoresFileLoaded = 1
+   return currentLevel
+endfunction
+
+" Function : SaveScoresToFile (PRIVATE)
+" Purpose  : saves the current scores to the highscores file. 
+" Args     : none
+" Returns  : nothing
+" Notes    : call by silent! call SaveScoresToFile()
+" Author   : Michael Sharpe (feline@irendi.com)
+function! <SID>SaveScoresToFile()
+   " newline characters keep creeping into the file. The sub below attempts to
+   " control that
+   let b:scoreFileContents = substitute(b:scoreFileContents, "\n\n", "\n", "g")
+   execute 'redir! > ' . g:SokobanScoreFile
+   echo b:scoreFileContents
+   redir END
+endfunction
+
+" Function : ExtractNumberInStr (PRIVATE)
+" Purpose  : extracts the number in a string which is between prefix and suffix
+" Args     : str - the string containing the prefix, number and suffix
+"            prefix - the text before the number
+"            suffix - the text after the number
+" Returns  : the extracted number
+" Author   : Michael Sharpe (feline@irendi.com)
+function! <SID>ExtractNumberInStr(str, prefix, suffix)
+   let startPos = matchend(a:str, a:prefix)
+   if (startPos != -1)
+      let endPos = match(a:str, a:suffix)
+      let len = endPos - startPos
+      let theNumber = strpart(a:str, startPos, len)
+   else
+      let theNumber = 0
+   endif
+   return theNumber
+endfunction
+
+" Function : DetermineHighScores (PRIVATE)
+" Purpose  : determines the high scores for a particular level. This is a
+"            little tricky as there are two high scores possible for each 
+"            level. One for the pushes and one for the moves. This function
+"            detemines both and maintains the information for both
+" Args     : level - the level to determine the high scores
+" Returns  : nothing, sets alot of buffer variables though
+" Author   : Michael Sharpe (feline@irendi.com)
+function! <SID>DetermineHighScores(level)
+  let b:highScoreByMoveMoves = -1
+  let b:highScoreByMovePushes = -1
+  let b:highScoreByMoveStr = ""
+  let b:highScoreByPushMoves = -1
+  let b:highScoreByPushPushes = -1
+  let b:highScoreByPushStr = ""
+
+  let levelStr = "Level " . a:level . ": "
+  " determine the first highscore
+  let startPos = match(b:scoreFileContents, levelStr)
+  if (startPos != -1) 
+     let endPos = match(b:scoreFileContents, ";", startPos)
+     let len = endPos - startPos + 1 
+     let scoreStr1 = strpart(b:scoreFileContents, startPos, len)
+     let scoreMoves1 = <SID>ExtractNumberInStr(scoreStr1, "Moves = ", ",")
+     let scorePushes1 = <SID>ExtractNumberInStr(scoreStr1, "Pushes = ", ";")
+   
+     " look for the second highscore
+     let startPos = match(b:scoreFileContents,levelStr, endPos + 1)
+     if (startPos != -1)
+        let endPos = match(b:scoreFileContents, ";", startPos)
+        let len = endPos - startPos + 1
+        let scoreStr2 = strpart(b:scoreFileContents, startPos, len)
+        let scoreMoves2 = <SID>ExtractNumberInStr(scoreStr2, "Moves = ", ",")
+        let scorePushes2 = <SID>ExtractNumberInStr(scoreStr2, "Pushes = ", ";")
+        if (scoreMoves1 < scoreMoves2)
+           " the first set of scores has the lowest moves
+           let b:highScoreByMoveMoves = scoreMoves1
+           let b:highScoreByMovePushes = scorePushes1
+           let b:highScoreByMoveStr = scoreStr1
+           let b:highScoreByPushMoves = scoreMoves2
+           let b:highScoreByPushPushes = scorePushes2
+           let b:highScoreByPushStr = scoreStr2
+        else
+           " the first set of scores has the lowest pushes
+           let b:highScoreByMoveMoves = scoreMoves2
+           let b:highScoreByMovePushes = scorePushes2
+           let b:highScoreByMoveStr = scoreStr2
+           let b:highScoreByPushMoves = scoreMoves1
+           let b:highScoreByPushPushes = scorePushes1
+           let b:highScoreByPushStr = scoreStr1
+        endif
+     else
+        let b:highScoreByMoveMoves = scoreMoves1
+        let b:highScoreByMovePushes = scorePushes1
+        let b:highScoreByMoveStr = scoreStr1
+        let b:highScoreByPushMoves = -1
+        let b:highScoreByPushPushes = -1
+        let b:highScoreByPushStr = ""
+     endif
+  endif
+endfunction
+
+" Function : UpdateHighScores (PRIVATE)
+" Purpose  : Determines if a highscore has been beaten, and if so saves it to 
+"            the highscores file
+" Args     : none.
+" Returns  : nothing
+" Author   : Michael Sharpe (feline@irendi.com)
+function! <SID>UpdateHighScores()
+   let updateMoveRecord = 0
+   let updatePushRecord = 0
+
+   let newScoreStr = "Level " . b:level . ": Moves = " . b:moves . ", Pushes = " . b:pushes . ";"
+
+   if (b:moves < b:highScoreByMoveMoves)
+      let updateMoveRecord = 1
+   endif
+      
+   if ((b:moves == b:highScoreByMoveMoves) && (b:pushes < b:highScoreByMovePushes)) 
+      let updateMoveRecord = 1
+   endif
+
+   if (b:pushes < b:highScoreByPushPushes)
+      let updatePushRecord = 1
+   endif
+
+   if ((b:pushes == b:highScoreByPushPushes) && (b:moves < b:highScoreByPushMoves))
+      let updatePushRecord = 1
+   endif
+
+   if (b:highScoreByMoveStr == "")
+      let updateMoveRecord = 1
+   endif
+
+   if (b:highScoreByPushStr == "" && b:highScoreByMoveStr != newScoreStr)
+      let updatePushRecord = 1
+   endif
+
+   if (updateMoveRecord && updatePushRecord)
+      "this record beats both high scores
+      if (b:highScoreByMoveStr != "")
+         let b:scoreFileContents = substitute(b:scoreFileContents, b:highScoreByMoveStr, newScoreStr, "")
+      else
+         let b:scoreFileContents = b:scoreFileContents . "\n" . newScoreStr
+      endif
+      if (b:highScoreByPushStr != "")
+         let b:scoreFileContents = substitute(b:scoreFileContents, b:highScoreByPushStr, "", "")
+      endif
+   elseif (updateMoveRecord)
+      if (b:highScoreByMoveStr != "")
+         let b:scoreFileContents = substitute(b:scoreFileContents, b:highScoreByMoveStr, newScoreStr, "")
+      else 
+         let b:scoreFileContents = b:scoreFileContents . "\n" . newScoreStr
+      endif
+   elseif (updatePushRecord)
+      if (b:highScoreByPushStr != "")
+         let b:scoreFileContents = substitute(b:scoreFileContents, b:highScoreByPushStr, newScoreStr, "")
+      else
+         let b:scoreFileContents = b:scoreFileContents . "\n" . newScoreStr
+      endif
+   endif
+   if (updateMoveRecord || updatePushRecord)
+      silent! call <SID>SaveScoresToFile()
+   endif
+endfunction
+
+" Function : SaveCurrentLevelToFile (PRIVATE)
+" Purpose  : saves the current level to the high scores file.
+" Args     : level - the level number to save to the file
+" Returns  : nothing
+" Author   : Michael Sharpe (feline@irendi.com)
+function! <SID>SaveCurrentLevelToFile(level)
+   let idx = match(b:scoreFileContents, "CurrentLevel")
+   if (idx != -1) 
+      let b:scoreFileContents = substitute(b:scoreFileContents, "CurrentLevel = [0-9]*;", "CurrentLevel = " . a:level . ";", "")
+   else 
+      let b:scoreFileContents = "CurrentLevel = " . a:level . ";\n" .  b:scoreFileContents
+   endif
+   silent! call <SID>SaveScoresToFile()
+endfunction
+
+" Function : DisplayHighScores (PRIVATE)
+" Purpose  : Displays the high scores for a level under the level when it is
+"            loaded.
+" Args     : none
+" Author   : Michael Sharpe (feline@irendi.com)
+function! <SID>DisplayHighScores()
+   if (b:highScoreByMoveStr != "")
+      call append(line("$"), "")
+      call append(line("$"), '-------------------------------------------------------------------------------')
+      call append(line("$"), "Best Score by moves  - Moves: " .  b:highScoreByMoveMoves . " 	Pushes: " . b:highScoreByMovePushes)
+      if (b:highScoreByPushStr != "")
+         call append(line("$"), "Best Score by pushes - Moves: " .  b:highScoreByPushMoves . " 	Pushes: " . b:highScoreByPushPushes)
+      endif
+   endif
+endfunction
+
 " Function : Sokoban (PUBLIC)
 " Purpose  : This is the entry point to the game. It create the buffer, loads
 "            the level, and sets the game up.
@@ -577,9 +823,19 @@ function! Sokoban(splitWindow, ...)
       let level = a:1
    endif
    call <SID>FindOrCreateBuffer('__\.\#\$VimSokoban\$\#\.__', a:splitWindow)
+   set modifiable
    call <SID>ClearBuffer()
+   if (!exists("b:scoresFileLoaded"))
+      let savedLevel = <SID>LoadScoresFile()
+      call <SID>ClearBuffer()
+      " if there was a saved level and the level was not specified use it now
+      if (a:0 == 0 && savedLevel != 0)
+         let level = savedLevel
+      endif
+   endif
    call <SID>DisplayInitialHeader(level)
    call <SID>LoadLevel(level)
+   set nomodifiable
    call <SID>SetupMaps()
    " do something with the cursor....
    normal 1G
